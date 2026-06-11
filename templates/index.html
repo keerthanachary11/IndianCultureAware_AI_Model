@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>BharatAI Cultural Assistant</title>
+
+<style>
+
+body{
+font-family: Arial;
+background:#f5f5f5;
+text-align:center;
+}
+
+#chat{
+width:70%;
+height:450px;
+margin:auto;
+border:1px solid #ccc;
+overflow-y:auto;
+padding:15px;
+background:white;
+border-radius:10px;
+text-align:left;
+}
+
+.user{
+background:#e3f2fd;
+padding:8px;
+margin:6px;
+border-radius:6px;
+}
+
+.ai{
+background:#f1f1f1;
+padding:8px;
+margin:6px;
+border-radius:6px;
+}
+
+.info{
+font-size:12px;
+color:gray;
+margin-left:6px;
+}
+
+input{
+width:50%;
+padding:10px;
+border-radius:5px;
+border:1px solid #ccc;
+}
+
+button{
+padding:10px;
+margin:5px;
+cursor:pointer;
+border-radius:5px;
+border:none;
+background:#1976d2;
+color:white;
+}
+
+button:hover{
+background:#0d47a1;
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h2>BharatAI – Indian Culture Assistant</h2>
+
+<div id="chat"></div>
+
+<br>
+
+<input id="message" placeholder="Ask about Indian culture...">
+
+<button onclick="sendMessage()">Send</button>
+<button onclick="uploadImage()">Upload Image</button>
+<button onclick="startRecording()">🎤 Speak</button>
+
+<input type="file" id="imageInput" style="display:none">
+
+<script>
+
+let mediaRecorder
+let audioChunks=[]
+let currentAudio=null
+
+function addMessage(text,cls){
+
+let chat=document.getElementById("chat")
+
+chat.innerHTML+=`<div class="${cls}">${text}</div>`
+
+chat.scrollTop=chat.scrollHeight
+
+}
+
+
+// ENTER KEY SEND
+document.getElementById("message").addEventListener("keypress",function(e){
+
+if(e.key==="Enter"){
+sendMessage()
+}
+
+})
+
+
+// ---------------- TEXT CHAT ----------------
+
+function sendMessage(){
+
+let message=document.getElementById("message").value.trim()
+
+if(!message) return
+
+addMessage("<b>You:</b> "+message,"user")
+
+document.getElementById("message").value=""
+
+addMessage("<i>AI typing...</i>","ai")
+
+fetch("/chat",{
+
+method:"POST",
+
+headers:{
+"Content-Type":"application/json"
+},
+
+body:JSON.stringify({message:message})
+
+})
+.then(res=>res.json())
+.then(data=>{
+
+removeTyping()
+
+addMessage("<b>AI:</b> "+data.response,"ai")
+
+if(data.topic && data.lang){
+addMessage(`<span class="info">Topic: ${data.topic} | Language: ${data.lang}</span>`,"ai")
+}
+
+playAudio(data.audio)
+
+})
+
+}
+
+
+// ---------------- IMAGE ----------------
+
+function uploadImage(){
+
+document.getElementById("imageInput").click()
+
+}
+
+document.getElementById("imageInput").addEventListener("change",function(){
+
+let file=this.files[0]
+
+if(!file) return
+
+let formData=new FormData()
+
+formData.append("image",file)
+
+addMessage("<b>You:</b> Uploaded an image","user")
+
+addMessage("<i>Analyzing image...</i>","ai")
+
+fetch("/image",{
+
+method:"POST",
+
+body:formData
+
+})
+.then(res=>res.json())
+.then(data=>{
+
+removeTyping()
+
+let confidence=data.confidence?Math.round(data.confidence*100):0
+
+addMessage(`<b>AI (Image detected):</b> ${data.label} (${confidence}%)`,"ai")
+
+addMessage("<b>AI:</b> "+data.response,"ai")
+
+playAudio(data.audio)
+
+})
+
+this.value=""
+
+})
+
+
+
+// ---------------- VOICE ----------------
+
+async function startRecording(){
+
+const stream=await navigator.mediaDevices.getUserMedia({audio:true})
+
+mediaRecorder=new MediaRecorder(stream)
+
+audioChunks=[]
+
+mediaRecorder.start()
+
+addMessage("<i>Recording voice...</i>","ai")
+
+mediaRecorder.ondataavailable=e=>{
+audioChunks.push(e.data)
+}
+
+mediaRecorder.onstop=sendAudio
+
+setTimeout(()=>mediaRecorder.stop(),5000)
+
+}
+
+
+function sendAudio(){
+
+const blob=new Blob(audioChunks,{type:"audio/wav"})
+
+const formData=new FormData()
+
+formData.append("audio",blob,"speech.wav")
+
+fetch("/voice",{
+
+method:"POST",
+
+body:formData
+
+})
+.then(res=>res.json())
+.then(data=>{
+
+removeTyping()
+
+addMessage("<b>You (voice):</b> "+data.text,"user")
+
+addMessage("<b>AI:</b> "+data.response,"ai")
+
+if(data.topic && data.lang){
+addMessage(`<span class="info">Topic: ${data.topic} | Language: ${data.lang}</span>`,"ai")
+}
+
+playAudio(data.audio)
+
+})
+
+audioChunks=[]
+
+}
+
+
+
+// ---------------- AUDIO ----------------
+
+function playAudio(path){
+
+if(!path) return
+
+if(currentAudio){
+currentAudio.pause()
+currentAudio.currentTime=0
+}
+
+currentAudio=new Audio("/"+path)
+
+currentAudio.play().catch(()=>{})
+
+}
+
+
+
+// ---------------- REMOVE TYPING ----------------
+
+function removeTyping(){
+
+let chat=document.getElementById("chat")
+
+chat.innerHTML=chat.innerHTML.replace("<div class=\"ai\"><i>AI typing...</i></div>","")
+
+chat.innerHTML=chat.innerHTML.replace("<div class=\"ai\"><i>Analyzing image...</i></div>","")
+
+}
+
+</script>
+
+</body>
+</html>
